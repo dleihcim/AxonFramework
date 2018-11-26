@@ -33,6 +33,9 @@
 package org.axonframework.springboot.autoconfig;
 
 
+import io.grpc.ClientInterceptor;
+import io.opentracing.Tracer;
+import io.opentracing.contrib.ClientTracingInterceptor;
 import org.axonframework.axonserver.connector.AxonServerConfiguration;
 import org.axonframework.axonserver.connector.AxonServerConnectionManager;
 import org.axonframework.axonserver.connector.command.AxonServerCommandBus;
@@ -49,12 +52,17 @@ import org.axonframework.common.transaction.TransactionManager;
 import org.axonframework.config.EventProcessingConfiguration;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.messaging.interceptors.CorrelationDataInterceptor;
-import org.axonframework.queryhandling.*;
+import org.axonframework.queryhandling.LoggingQueryInvocationErrorHandler;
+import org.axonframework.queryhandling.QueryBus;
+import org.axonframework.queryhandling.QueryInvocationErrorHandler;
+import org.axonframework.queryhandling.QueryUpdateEmitter;
+import org.axonframework.queryhandling.SimpleQueryBus;
 import org.axonframework.serialization.Serializer;
 import org.axonframework.spring.config.AxonConfiguration;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfigureBefore;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.ApplicationContext;
@@ -62,6 +70,8 @@ import org.springframework.context.ApplicationContextAware;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
+
+import java.util.Collections;
 
 /**
  * Configures AxonServer as implementation for the CommandBus and QueryBus
@@ -103,7 +113,8 @@ public class AxonServerAutoConfiguration implements ApplicationContextAware {
                                            Serializer serializer,
                                            AxonServerConnectionManager axonServerConnectionManager,
                                            RoutingStrategy routingStrategy,
-                                           CommandPriorityCalculator priorityCalculator) {
+                                           CommandPriorityCalculator priorityCalculator,
+                                           ClientInterceptor cti) {
 
         SimpleCommandBus commandBus =
                 SimpleCommandBus.builder()
@@ -115,12 +126,31 @@ public class AxonServerAutoConfiguration implements ApplicationContextAware {
                 new CorrelationDataInterceptor<>(axonConfiguration.correlationDataProviders())
         );
 
+
         return new AxonServerCommandBus(axonServerConnectionManager,
                                         axonServerConfiguration,
                                         commandBus,
                                         serializer,
                                         routingStrategy,
-                                        priorityCalculator);
+                                        priorityCalculator,
+                                        Collections.singletonList(cti)
+        );
+    }
+
+
+//    @Bean
+//    @ConditionalOnClass(Tracer.class)
+//    @ConditionalOnMissingBean(Tracer.class)
+//    public Tracer tracer() {
+//        return new io.jaegertracing.Configuration("axon")
+//           .withSampler(new io.jaegertracing.Configuration.SamplerConfiguration().withType(ProbabilisticSampler.TYPE).withParam(1))
+//           .withReporter(new io.jaegertracing.Configuration.ReporterConfiguration()).getTracer();
+//    }
+
+    @Bean
+    @ConditionalOnBean(Tracer.class)
+    public ClientTracingInterceptor tracingInterceptor(Tracer tracer) {
+        return new ClientTracingInterceptor(tracer);
     }
 
     @Bean

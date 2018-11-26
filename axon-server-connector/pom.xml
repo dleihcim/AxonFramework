@@ -95,6 +95,13 @@
             <artifactId>netty-tcnative-boringssl-static</artifactId>
         </dependency>
 
+        <!-- tracing -->
+        <dependency>
+            <groupId>io.opentracing.contrib</groupId>
+            <artifactId>grpc-opentracing</artifactId>
+            <version>0.2.0</version>
+        </dependency>
+
         <!-- Test dependencies -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>

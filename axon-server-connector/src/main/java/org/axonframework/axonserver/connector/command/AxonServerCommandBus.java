@@ -17,7 +17,12 @@
 package org.axonframework.axonserver.connector.command;
 
 import io.axoniq.axonserver.grpc.ErrorMessage;
-import io.axoniq.axonserver.grpc.command.*;
+import io.axoniq.axonserver.grpc.command.Command;
+import io.axoniq.axonserver.grpc.command.CommandProviderInbound;
+import io.axoniq.axonserver.grpc.command.CommandProviderOutbound;
+import io.axoniq.axonserver.grpc.command.CommandResponse;
+import io.axoniq.axonserver.grpc.command.CommandServiceGrpc;
+import io.axoniq.axonserver.grpc.command.CommandSubscription;
 import io.grpc.ClientInterceptor;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
@@ -34,7 +39,6 @@ import org.axonframework.commandhandling.CommandBus;
 import org.axonframework.commandhandling.CommandCallback;
 import org.axonframework.commandhandling.CommandMessage;
 import org.axonframework.commandhandling.GenericCommandResultMessage;
-import org.axonframework.commandhandling.distributed.CommandDispatchException;
 import org.axonframework.commandhandling.distributed.RoutingStrategy;
 import org.axonframework.common.AxonThreadFactory;
 import org.axonframework.common.Registration;
@@ -45,9 +49,15 @@ import org.axonframework.serialization.Serializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.*;
+import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.IntStream;
 
@@ -71,9 +81,16 @@ public class AxonServerCommandBus implements CommandBus {
     private final DispatchInterceptors<CommandMessage<?>> dispatchInterceptors = new DispatchInterceptors<>();
     private Logger logger = LoggerFactory.getLogger(AxonServerCommandBus.class);
 
+
+
     public AxonServerCommandBus(AxonServerConnectionManager axonServerConnectionManager, AxonServerConfiguration configuration,
                                 CommandBus localSegment, Serializer serializer, RoutingStrategy routingStrategy) {
         this(axonServerConnectionManager, configuration, localSegment, serializer, routingStrategy, new CommandPriorityCalculator(){});
+    }
+
+    public AxonServerCommandBus(AxonServerConnectionManager axonServerConnectionManager, AxonServerConfiguration configuration,
+                                CommandBus localSegment, Serializer serializer, RoutingStrategy routingStrategy, CommandPriorityCalculator priorityCalculator) {
+        this(axonServerConnectionManager, configuration, localSegment, serializer, routingStrategy, priorityCalculator, null);
     }
     /**
      * @param axonServerConnectionManager creates connection to AxonServer platform
@@ -84,7 +101,9 @@ public class AxonServerCommandBus implements CommandBus {
      * @param priorityCalculator calculates the request priority based on the content and adds it to the request
      */
     public AxonServerCommandBus(AxonServerConnectionManager axonServerConnectionManager, AxonServerConfiguration configuration,
-                                CommandBus localSegment, Serializer serializer, RoutingStrategy routingStrategy, CommandPriorityCalculator priorityCalculator) {
+                                CommandBus localSegment, Serializer serializer, RoutingStrategy routingStrategy,
+                                CommandPriorityCalculator priorityCalculator,
+                                List<ClientInterceptor> customClientInterceptors) {
         this.localSegment = localSegment;
         this.serializer = new CommandSerializer(serializer, configuration);
         this.axonServerConnectionManager = axonServerConnectionManager;
@@ -92,8 +111,15 @@ public class AxonServerCommandBus implements CommandBus {
         this.priorityCalculator = priorityCalculator;
         this.configuration = configuration;
         this.commandRouterSubscriber = new CommandRouterSubscriber();
-        interceptors = new ClientInterceptor[]{ new TokenAddingInterceptor(configuration.getToken()),
-                new ContextAddingInterceptor(configuration.getContext())};
+
+        List<ClientInterceptor> clientInterceptors= new ArrayList<>();
+        clientInterceptors.add(new TokenAddingInterceptor(configuration.getToken()));
+        clientInterceptors.add(new ContextAddingInterceptor(configuration.getContext()));
+        if (customClientInterceptors!=null){
+            clientInterceptors.addAll(customClientInterceptors);
+        }
+
+        this.interceptors = clientInterceptors.toArray(new ClientInterceptor[0]);
     }
 
     @Override

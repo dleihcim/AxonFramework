@@ -32,7 +32,11 @@ import org.axonframework.config.Configurer;
 import org.axonframework.config.ConfigurerModule;
 import org.axonframework.eventhandling.tokenstore.TokenStore;
 import org.axonframework.eventhandling.tokenstore.inmemory.InMemoryTokenStore;
-import org.axonframework.queryhandling.*;
+import org.axonframework.queryhandling.LoggingQueryInvocationErrorHandler;
+import org.axonframework.queryhandling.QueryBus;
+import org.axonframework.queryhandling.QueryInvocationErrorHandler;
+import org.axonframework.queryhandling.QueryUpdateEmitter;
+import org.axonframework.queryhandling.SimpleQueryBus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -82,12 +86,13 @@ public class ServerConnectorConfigurerModule implements ConfigurerModule {
 
     private AxonServerCommandBus buildCommandBus(Configuration c) {
         AxonServerCommandBus commandBus = new AxonServerCommandBus(c.getComponent(AxonServerConnectionManager.class),
-                                                                   c.getComponent(AxonServerConfiguration.class),
-                                                                   SimpleCommandBus.builder().build(),
-                                                                   c.messageSerializer(),
-                                                                   c.getComponent(RoutingStrategy.class, AnnotationRoutingStrategy::new),
-                                                                   c.getComponent(CommandPriorityCalculator.class,
-                                                                                  () -> new CommandPriorityCalculator() {}));
+                c.getComponent(AxonServerConfiguration.class),
+                SimpleCommandBus.builder().build(),
+                c.messageSerializer(),
+                c.getComponent(RoutingStrategy.class, AnnotationRoutingStrategy::new),
+                c.getComponent(CommandPriorityCalculator.class,
+                        () -> new CommandPriorityCalculator() {
+                        }), null);
         c.onShutdown(commandBus::disconnect);
         return commandBus;
     }
